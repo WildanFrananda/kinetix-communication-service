@@ -1,0 +1,32 @@
+{
+    // CMake Tools is the source of IntelliSense flags. Without this the C/C++ extension guesses,
+    // and its guess has neither C++23 nor any of the Homebrew include paths.
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/build-full/compile_commands.json",
+
+    // The preset that has the adapters switched on. The cheap `dev` preset builds and tests the
+    // domain and the use cases in seconds, but its compile database does not mention a single
+    // file under src/adapters/, so the editor would have nothing to go on for two thirds of the
+    // repository.
+    "cmake.configurePreset": "full",
+    "cmake.buildPreset": "full",
+    "cmake.useCMakePresets": "always",
+
+    // Configure on open, so the provider above has answers the moment a file is opened. With this
+    // off, CMake Tools stays idle until something asks it to build, and until then IntelliSense
+    // has no flags for any file — which looks exactly like the project being broken.
+    "cmake.configureOnOpen": true,
+
+    "editor.formatOnSave": false,
+    "[cpp]": {
+        "editor.defaultFormatter": "ms-vscode.cpptools"
+    },
+    "C_Cpp.clang_format_path": "/opt/homebrew/opt/llvm/bin/clang-format",
+    "C_Cpp.codeAnalysis.clangTidy.enabled": true,
+    "C_Cpp.codeAnalysis.clangTidy.path": "/opt/homebrew/opt/llvm/bin/clang-tidy",
+    "C_Cpp.codeAnalysis.runAutomatically": true,
+
+    "files.associations": {
+        "*.hpp": "cpp"
+    }
+}

@@ -1,0 +1,16 @@
+# Build trees. `build` is the cheap one (domain + application + tests, no external libraries);
+# `build-full` and anything else prefixed the same way are the ones that need Qt, gRPC and Drogon.
+build/
+build-*/
+
+# The contract, fetched by bin/sync-contracts at a pinned tag and commit.
+#
+# Ignored on purpose, and it is the rule rather than an oversight: kinetix-contracts is the only
+# source of a .proto in this estate. `git ls-files '*.proto'` must stay empty in this repository,
+# as it does in every other service.
+.contracts/
+
+# Compilation database, written by CMake for clang-tidy and editors.
+compile_commands.json
+
+.DS_Store

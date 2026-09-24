@@ -1,0 +1,60 @@
+# What the compiler will not catch on its own.
+#
+# The checks are chosen, not inherited wholesale: a list that fires on every line is a list
+# everyone turns off. Each block below earns its place.
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  cert-*,
+  -cert-err58-cpp,
+  clang-analyzer-*,
+  cppcoreguidelines-*,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  misc-*,
+  -misc-include-cleaner,
+  -misc-non-private-member-variables-in-classes,
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  performance-*,
+  readability-*,
+  -readability-identifier-length,
+  -readability-magic-numbers
+
+# misc-include-cleaner is off because it judges each .cpp on its own and does not accept what the
+# file's own paired header already includes. Satisfying it means every source file repeating its
+# header's include list, which is the opposite of one place to change.
+#
+# bugprone-easily-swappable-parameters is off because Conversation::Between deliberately takes two
+# PrincipalId values in a row. They are genuinely interchangeable there — the conversation is
+# symmetric — so the check has nothing to warn about and would fire on the one design decision
+# this service most depends on.
+#
+# modernize-use-trailing-return-type is off because the rest of the estate does not use it and a
+# style split inside one repository costs more than the alignment gains.
+
+# Deliberately empty here, and set by CI instead.
+#
+# With '*' every suggestion this file enables becomes an *error*, and an editor running clang-tidy
+# live then paints the whole project red for a missing trailing comma. The severity that matters
+# is the one the pipeline enforces, so CI passes --warnings-as-errors='*' and the editor shows
+# findings as what they are.
+WarningsAsErrors: ''
+HeaderFilterRegex: '(include|src)/.*'
+
+CheckOptions:
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key: readability-identifier-naming.AbstractClassPrefix
+    value: I
+  - key: readability-identifier-naming.FunctionCase
+    value: CamelCase
+  - key: readability-identifier-naming.PrivateMemberSuffix
+    value: _
+  - key: readability-identifier-naming.NamespaceCase
+    value: lower_case
+  - key: readability-identifier-naming.ConstexprVariablePrefix
+    value: k
+  - key: readability-identifier-naming.ConstexprVariableCase
+    value: CamelCase

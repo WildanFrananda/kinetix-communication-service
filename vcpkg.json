@@ -1,0 +1,21 @@
+{
+  "name": "kinetix-communication-service",
+  "version-string": "0.1.0",
+  "description": "Conversation between the two principals on either side of an order.",
+  "homepage": "https://github.com/WildanFrananda/kinetix-communication-service",
+  "dependencies": [
+    "drogon",
+    "grpc",
+    "protobuf",
+    "mqtt-cpp",
+    "boost-asio",
+    {
+      "name": "qtbase",
+      "default-features": false
+    },
+    "tinyorm",
+    "gtest"
+  ],
+  "$comment-baseline": "No builtin-baseline: it is a commit of the vcpkg registry, and inventing one would pin this estate to a revision nobody chose. Run `vcpkg x-update-baseline --add-initial-baseline` in a vcpkg clone to write the real value.",
+  "$comment-platform": "vcpkg's tinyorm port declares supports: !(... osx ... arm ...), so this manifest resolves on Linux and Windows but not on macOS. The macOS development build uses Homebrew for Qt, Drogon and gRPC and CMake FetchContent for TinyORM and mqtt_cpp; see CLAUDE.md. TinyORM does build from source on macOS arm64 — the exclusion is untested, not broken."
+}

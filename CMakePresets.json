@@ -1,0 +1,81 @@
+{
+    "version": 6,
+    "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+
+    "configurePresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+            }
+        },
+        {
+            "name": "macos",
+            "hidden": true,
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            },
+            "cacheVariables": {
+                "CMAKE_CXX_COMPILER": "/usr/bin/clang++",
+                "CMAKE_PREFIX_PATH": "/opt/homebrew/opt/qt;/opt/homebrew/opt/drogon;/opt/homebrew/opt/grpc;/opt/homebrew"
+            }
+        },
+        {
+            "name": "dev",
+            "displayName": "dev — domain, use cases and their tests (seconds, no external libraries)",
+            "inherits": ["base", "macos"],
+            "cacheVariables": {
+                "COMMUNICATION_BUILD_ADAPTERS": "OFF",
+                "COMMUNICATION_BUILD_TESTS": "ON"
+            }
+        },
+        {
+            "name": "full",
+            "displayName": "full — everything, including the adapters (needs Qt, Drogon, gRPC, Boost)",
+            "inherits": ["base", "macos"],
+            "binaryDir": "${sourceDir}/build-full",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "COMMUNICATION_BUILD_ADAPTERS": "ON",
+                "COMMUNICATION_BUILD_TESTS": "ON"
+            }
+        },
+        {
+            "name": "ci",
+            "displayName": "ci — full, with warnings as errors",
+            "inherits": "base",
+            "binaryDir": "${sourceDir}/build-ci",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "COMMUNICATION_BUILD_ADAPTERS": "ON",
+                "COMMUNICATION_BUILD_TESTS": "ON",
+                "COMMUNICATION_WERROR": "ON"
+            }
+        }
+    ],
+
+    "buildPresets": [
+        { "name": "dev", "configurePreset": "dev" },
+        { "name": "full", "configurePreset": "full" },
+        { "name": "ci", "configurePreset": "ci" }
+    ],
+
+    "testPresets": [
+        {
+            "name": "dev",
+            "configurePreset": "dev",
+            "output": { "outputOnFailure": true }
+        },
+        {
+            "name": "full",
+            "configurePreset": "full",
+            "output": { "outputOnFailure": true }
+        }
+    ]
+}

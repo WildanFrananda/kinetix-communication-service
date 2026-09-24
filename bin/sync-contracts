@@ -1,0 +1,62 @@
+#!/usr/bin/env sh
+# Fetches the wire contracts this service compiles against.
+#
+# There is no C++ package published from kinetix-contracts: buf's remote plugins cover TypeScript,
+# Python, C#, Java, Ruby, PHP and Go, and none of them emit C++ or the gRPC C++ stubs. So this
+# service generates from .proto at build time, as pricing and matching do, but from the contract
+# repository at a pinned tag rather than from a copy committed here. `.contracts/` is gitignored,
+# so `git ls-files '*.proto'` stays empty and the S9 exit criterion holds.
+#
+# Pinned to a commit, not just a tag: a tag can be moved, and a moved tag silently changes what
+# this service speaks. The tag is what a reader looks up; the commit is what is verified.
+set -eu
+
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
+REPO="https://github.com/WildanFrananda/kinetix-contracts.git"
+TAG="v1.0.20"
+COMMIT="cbd5d56df761b920ce1125d755d02c7c1f2f0491"
+DEST="$HERE/.contracts"
+
+if [ -d "$DEST/.git" ]; then
+  got="$(git -C "$DEST" rev-parse HEAD)"
+  if [ "$got" = "$COMMIT" ]; then
+    echo "contracts already at $TAG ($COMMIT)"
+    exit 0
+  fi
+  rm -rf "$DEST"
+fi
+
+git clone --depth 1 --branch "$TAG" --quiet "$REPO" "$DEST"
+
+got="$(git -C "$DEST" rev-parse HEAD)"
+if [ "$got" != "$COMMIT" ]; then
+  echo "$TAG resolves to $got, but this service is pinned to $COMMIT"
+  echo "either the tag was moved or the pin is stale; neither should be worked around here"
+  rm -rf "$DEST"
+  exit 1
+fi
+
+# Only what this service speaks.
+#
+# The contract repository carries ten packages. This service is a client of exactly one of them:
+# it asks identity whether a principal exists, and that is the whole of its outbound gRPC. Copying
+# only those two protos means a later "while we are here, let us just read the order" is a build
+# failure rather than a review comment.
+#
+# Communication publishes no gRPC service of its own. Nothing in the estate calls it — the people using it
+# are on phones and browsers, and they arrive over HTTP and MQTT at the edge. Adding a communication package
+# to the contract for nobody to call would be a contract change that buys nothing.
+SPOKEN="$HERE/.contracts/spoken"
+rm -rf "$SPOKEN"
+
+for path in common/v1/common.proto identity/v1/identity.proto; do
+  test -f "$DEST/proto/$path" || {
+    echo "$TAG has no proto/$path"
+    rm -rf "$DEST" "$SPOKEN"
+    exit 1
+  }
+  mkdir -p "$SPOKEN/$(dirname "$path")"
+  cp "$DEST/proto/$path" "$SPOKEN/$path"
+done
+
+echo "contracts synced at $TAG ($COMMIT); speaking common, identity"

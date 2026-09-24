@@ -1,0 +1,34 @@
+# The test suite inherits the repository's checks and switches off the ones that are arguing with
+# GoogleTest rather than with anything anybody wrote.
+#
+# Each exclusion is here because the alternative is contorting a test to satisfy a rule aimed at
+# production code. Nothing that could hide a real defect in a test is disabled — the optional and
+# container-access checks stay on everywhere except where a test is deliberately asserting on a
+# fixed literal it wrote two lines earlier.
+InheritParentConfig: true
+
+Checks: >
+  -cppcoreguidelines-non-private-member-variables-in-classes,
+  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
+  -readability-function-cognitive-complexity,
+  -readability-identifier-naming,
+  -readability-trailing-comma,
+  -modernize-return-braced-init-list,
+  -bugprone-unchecked-optional-access
+
+# cppcoreguidelines-non-private-member-variables-in-classes: a TEST_F fixture's members must be
+# `protected` for the test bodies to see them. That is how the framework works.
+#
+# readability-identifier-naming: TEST_F generates a class named after the fixture and the test,
+# which will never match a naming rule written for hand-written classes.
+#
+# cppcoreguidelines-pro-bounds-avoid-unchecked-container-access and
+# bugprone-unchecked-optional-access: a test that indexes a string it just built, or dereferences
+# an optional it has already ASSERT_TRUE'd, is asserting on a literal it wrote itself. Bounds
+# checking there would only turn a readable failure message into a thrown exception.
+#
+# readability-function-cognitive-complexity: a test body is a list of assertions, and splitting
+# one to satisfy a complexity threshold spreads a single fact across two functions.
+#
+# readability-trailing-comma and modernize-return-braced-init-list: style preferences that clash
+# with the shapes clang-format produces for gmock's macros.
