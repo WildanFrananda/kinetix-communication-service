@@ -332,6 +332,112 @@ Everything else — timeouts, ports, the topic prefix, the worker count — has 
 **On macOS, Homebrew's Qt ships only the SQLite driver**, so the process builds but cannot reach
 Postgres there; the Linux packages (`qt6-psql`) carry QPSQL.
 
+## Chat over MQTT: the design decided by the user (2026-10-15)
+
+Decided in conversation with the user, in three steps: EMQX as the broker; clients speak MQTT to EMQX
+directly rather than through Kong; and **messages are sent over MQTT too**, not over HTTP ("bagian 2").
+Build communication this way. Do not reintroduce a Kong route for MQTT, and do not move sending back to
+HTTP without asking the user.
+
+### The broker's licence (found and settled 2026-10-16, D10)
+
+Since 5.9 (May 2025) EMQX ships under the **Business Source License 1.1**. One production node is free;
+a cluster needs a commercial licence. The Docker Official Image is no longer published, and 5.8.x, the
+last Apache-2.0 line, gets no fixes. Told this, the user kept a dedicated MQTT broker rather than
+RabbitMQ's MQTT plugins ("tetap ingin menggunakan broker MQTT"), so **EMQX stays**. It runs as:
+- one node only;
+- a 5.9 or later release, pinned by digest from EMQ's own `emqx/emqx` repository.
+
+Everything below holds as written. The comparison and the permissive brokers to evaluate if the licence
+ever matters are in `kinetix-infrastructure/docs/MIDDLEWARE-ADOPTION.md` §7.3.
+
+### Who talks to whom
+
+- **The broker is EMQX**, hosted by `kinetix-infrastructure` as shared platform middleware, like Redis
+  and RabbitMQ. Chat data stays in this service's own Postgres.
+- **Clients connect to EMQX directly with an MQTT 5 client.** Mobile: `mqtts` on 8883. Browser: an MQTT
+  library over a WebSocket transport to EMQX's own TLS WebSocket listener (a browser cannot open TCP) —
+  still a direct MQTT session, not a Kong route. This is the one written exception to "all client
+  traffic enters through Kong" (AGENTS.md §1.4); a second public port is opened on purpose.
+- **HTTP through Kong stays for queries only**: open or find a conversation, list my conversations, read a
+  conversation's history. They need paging and a synchronous answer. Their paths must be real before
+  deploy (`ADD_METHOD_TO`, e.g. `/api/v1/conversations`) — `METHOD_ADD` puts the C++ namespace in the URL.
+- **This service connects to EMQX on an internal mTLS listener with its own PKI leaf** — no password.
+  EMQX takes its username from the certificate's CN (`peer_cert_as_username = cn`), and the ACL keys the
+  service's rights to that name.
+
+### Topics (prefix `kinetix/communication/`)
+
+| Topic | Direction | Carries |
+| --- | --- | --- |
+| `principals/{me}/outbox` | client → service | a message to send |
+| `principals/{me}/replies` | service → client | accepted or refused, matched by MQTT 5 correlation data |
+| `principals/{me}/messages` | service → client | every message in my conversations, mine included (other devices) |
+
+The service subscribes to `$share/communication/kinetix/communication/principals/+/outbox` (a shared
+subscription, so replicas split the load).
+
+### Sending, end to end
+
+1. The client publishes QoS 1 to its own outbox: `client_msg_id` (a UUID the client makes),
+   `conversation_id`, `body`; MQTT 5 `response_topic` = its replies topic, `correlation_data` =
+   `client_msg_id`.
+2. **The sender is read from the topic, and that is safe only because of the ACL**: a client may publish
+   to `principals/${username}/outbox` and nowhere else, and EMQX's JWT authenticator pins
+   `sub = "${username}"`. Get this wrong and anyone can speak as anyone.
+3. A new inbound adapter (`adapters/mqtt/MqttOutboxConsumer`) calls the **same** `app::SendMessage` the
+   HTTP adapter used, now with the client id: validate, check participation, then
+   `INSERT … ON CONFLICT (sender, client_msg_id) DO NOTHING`. A repeat of the same id returns the stored
+   message, never a second one (QoS 1 is at-least-once).
+4. Fan out QoS 1 to both participants' `messages` topics, then publish the reply with the request's
+   correlation data: `{"status":"accepted","message":{…}}` or `{"status":"refused","error":"…"}`.
+5. **PUBACK is manual** (`set_auto_pub_response(false)`): sent only after the database commit, or after a
+   definite refusal (not a participant, malformed). When Postgres or identity does not answer, no PUBACK:
+   the broker redelivers. Unknown is not no — a dependency outage is never reported to the client as a
+   refusal.
+6. The client waits for its reply by correlation id, and on a timeout resends with the **same**
+   `client_msg_id`.
+
+Schema change before the first deploy: `messages.client_msg_id TEXT NOT NULL` and
+`UNIQUE (sender, client_msg_id)`.
+
+### EMQX's job, since Kong is not in the path
+
+- TLS on every listener; no plaintext listener published.
+- JWT authenticator against identity's JWKS: issuer, audience, `token_use: access`,
+  `sub = "${username}"`, `disconnect_after_expire = true`. Identity stays the only auth authority; no
+  user passwords anywhere.
+- ACL, deny by default: a client publishes only to its own `outbox`, subscribes only to its own
+  `messages` and `replies`; only this service subscribes to the shared outbox and publishes to
+  `messages` and `replies`.
+- A payload size limit (a 4000-character body plus the envelope) and a per-client rate limit — the work
+  Kong does for HTTP.
+
+### Payloads are a contract
+
+The outbox request, the reply and the message are defined in `kinetix-contracts` (e.g.
+`communication/v1/chat.proto`), not hand-written JSON: web (TypeScript) and mobile (Dart) generate their
+types from it, and buf catches a breaking change. `adapters/wire/Json.cpp` gives way to the generated
+types when this lands.
+
+### Rules this must keep
+
+- **Settings fail fast, no fallbacks**: the broker host, port, TLS material and topic prefix are
+  required; drop today's defaults (`COMMUNICATION_MQTT_PORT` = 1883 plaintext, client id, prefix).
+- **Tests against the real thing**: unit tests on fakes, plus `tests/integration/` against a real EMQX —
+  the ACL, the shared subscription, manual PUBACK and redelivery, the duplicate `client_msg_id` — and in
+  CI that suite fails, not skips, when the broker is missing (see the lesson "A fake that agreed with the
+  bug").
+- **Observability like every service**: `/health`, `/health/ready`, `/metrics` (none exist yet), plus
+  counters for outbox messages accepted, refused and redelivered.
+- **HTTP token checks move to the JWKS, like every other service** (decided by the user, 2026-10-15).
+  The query endpoints verify identity's access token locally against identity's published keys —
+  RS256 only, issuer, audience, `token_use: access`, principal from `sub` — instead of calling identity's
+  `ValidateToken` over gRPC on every request. `GrpcPrincipalAuthenticator` gives way to a JWKS verifier
+  behind the same `IPrincipalAuthenticator` port. Keys unreachable is `503`, never `401`.
+- **Grants**: identity grants this service `GetPrincipal` only (to check a counterpart exists). Not
+  `ValidateToken` — nothing calls it once the JWKS verifier lands.
+
 ## Not built yet
 
 - **CI/CD, compose, Dockerfile and the system design** — deferred deliberately, to be done for
